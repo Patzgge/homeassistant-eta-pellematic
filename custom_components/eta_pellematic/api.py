@@ -36,11 +36,32 @@ class EtaApi:
         except Exception:
             return False
 
+    def _strip_namespaces(self, xml_string: str) -> ET.Element:
+        """Parse XML and strip namespaces to make finding tags easier."""
+        # We process the tags to remove {http://...} prefixes
+        try:
+            # Iterparse is robust, but for small files standard parse + strip is fine
+            it = ET.iterparse(asyncio.StreamReader(xml_string) if False else [xml_string]) 
+            # Actually, standard fromstring is easier, then walk and strip
+            root = ET.fromstring(xml_string)
+            
+            # Helper to strip namespace from a single tag
+            def strip(elem):
+                if '}' in elem.tag:
+                    elem.tag = elem.tag.split('}', 1)[1]
+                for child in elem:
+                    strip(child)
+            
+            strip(root)
+            return root
+        except Exception:
+            # Fallback if stripping fails
+            return ET.fromstring(xml_string)
+
     async def discover_endpoints(self) -> Dict[str, EtaEndpoint]:
         """Crawl the ETA XML tree to find all available sensors."""
         endpoints = {}
 
-        # Helper to fetch and parse XML
         async def fetch_xml(uri: str) -> Optional[ET.Element]:
             url = f"{self._base_url}/user/menu{uri}"
             try:
@@ -48,45 +69,88 @@ class EtaApi:
                     if response.status != 200:
                         return None
                     text = await response.text()
-                    # ETA sometimes returns invalid XML chars, simpler parse usually works
-                    return ET.fromstring(text)
+                    # Use our robust namespace stripper
+                    return self._strip_namespaces(text)
             except Exception as e:
                 LOGGER.debug("Failed to fetch menu %s: %s", uri, e)
                 return None
 
-        # Recursive crawler
+        # Recursive crawler that handles FUBs AND nested Objects
         async def crawl(uri: str, path_names: List[str]):
             root = await fetch_xml(uri)
             if root is None:
                 return
 
-            # Process Objects (Leaves/Sensors)
-            for obj in root.findall("object"):
-                obj_uri = obj.get("uri")
-                obj_name = obj.get("name")
-
-                if obj_uri and obj_name:
-                    full_path = path_names + [obj_name]
-                    clean_name = self._generate_clean_name(full_path)
-                    
-                    endpoints[obj_uri] = EtaEndpoint(
-                        uri=obj_uri,
-                        name=clean_name
-                    )
-
-            # Process Function Blocks (Folders) -> Recurse
-            tasks = []
-            for fub in root.findall("fub"):
-                fub_uri = fub.get("uri")
-                fub_name = fub.get("name")
-                if fub_uri:
-                    # Append current name to path and recurse
-                    new_path = path_names + [fub_name] if fub_name else path_names
-                    tasks.append(crawl(fub_uri, new_path))
+            # Find the starting point (Menu) if we are at root
+            start_node = root
+            if root.tag == 'eta':
+                menu_node = root.find('menu')
+                if menu_node is not None:
+                    start_node = menu_node
             
-            # Run tasks concurrently
+            # Iterate through children (fub or object)
+            tasks = []
+            
+            for child in start_node:
+                child_uri = child.get("uri")
+                child_name = child.get("name")
+                
+                if not child_uri:
+                    continue
+
+                # Prepare common data
+                new_path = path_names + [child_name] if child_name else path_names
+                
+                # Check if it is a folder structure (Fub or nested Object)
+                # In your XML, Objects can contain Objects. 
+                # If an object has children, it's a folder. If not, it's a sensor (usually).
+                # But to be safe, we just register EVERYTHING that has a URI as an endpoint,
+                # AND recurse down if it looks like a folder.
+                
+                clean_name = self._generate_clean_name(new_path)
+                
+                # Register this as an endpoint
+                endpoints[child_uri] = EtaEndpoint(
+                    uri=child_uri,
+                    name=clean_name
+                )
+                
+                # RECURSION LOGIC:
+                # If it's a 'fub', we definitely recurse.
+                # If it's an 'object' AND has no children in the current XML snippet, 
+                # we assume we might need to query it to see if it has children?
+                # Actually, ETA menu XML usually lists children if they exist.
+                # Your XML shows <object><object>...</object></object>.
+                
+                if child.tag == 'fub' or (child.tag == 'object' and len(child) > 0):
+                    # It has children or is a folder -> Go Deeper
+                    # We don't need a network request if the children are already here!
+                    # Optimization: If the children are already in 'child', we can recurse locally 
+                    # instead of fetching via HTTP again.
+                    
+                    if len(child) > 0:
+                        # Process children locally (recursion without HTTP)
+                        await crawl_local(child, new_path)
+                    else:
+                        # Fetch via HTTP (standard FUB behavior)
+                        tasks.append(crawl(child_uri, new_path))
+
             if tasks:
                 await asyncio.gather(*tasks)
+
+        # Local recursive helper to avoid HTTP calls when XML is nested
+        async def crawl_local(node: ET.Element, path_names: List[str]):
+            for child in node:
+                child_uri = child.get("uri")
+                child_name = child.get("name")
+                if child_uri:
+                    new_path = path_names + [child_name] if child_name else path_names
+                    clean_name = self._generate_clean_name(new_path)
+                    
+                    endpoints[child_uri] = EtaEndpoint(uri=child_uri, name=clean_name)
+                    
+                    if len(child) > 0:
+                        await crawl_local(child, new_path)
 
         LOGGER.info("Starting ETA Auto-Discovery...")
         await crawl("", [])
@@ -94,26 +158,21 @@ class EtaApi:
         return endpoints
 
     def _generate_clean_name(self, path_list: List[str]) -> str:
-        """Clean up the name path to avoid duplicates like 'Kessel Kessel'."""
+        """Clean up the name path."""
         if not path_list:
             return "Unknown"
-
         clean_path = []
         for i, part in enumerate(path_list):
             if not part:
                 continue
-            # Skip duplicates if the previous part is identical
             if i > 0 and part == path_list[i-1]:
                 continue
             clean_path.append(part)
-
         return " ".join(clean_path)
 
     async def get_values(self, uris: List[str]) -> Dict[str, Dict[str, Any]]:
         """Fetch values for a list of URIs."""
         results = {}
-        # Limit concurrency to avoid overloading the ETA controller
-        # 10 concurrent requests is usually safe for ETA PU/PC systems
         sem = asyncio.Semaphore(10)
 
         async def fetch_single(uri: str):
@@ -123,7 +182,9 @@ class EtaApi:
                     async with self._session.get(url) as response:
                         if response.status == 200:
                             text = await response.text()
-                            parsed = self._parse_value_xml(text)
+                            # Strip namespaces here too!
+                            root = self._strip_namespaces(text)
+                            parsed = self._parse_value_xml_element(root)
                             if parsed:
                                 results[uri] = parsed
                 except Exception as e:
@@ -133,12 +194,11 @@ class EtaApi:
         await asyncio.gather(*tasks)
         return results
 
-    def _parse_value_xml(self, xml_string: str) -> Optional[Dict[str, Any]]:
-        """Parse the variable XML response."""
+    def _parse_value_xml_element(self, root: ET.Element) -> Optional[Dict[str, Any]]:
+        """Parse from an already processed ElementTree object."""
         try:
-            root = ET.fromstring(xml_string)
             val_node = root if root.tag == 'value' else root.find('.//value')
-
+            
             if val_node is not None:
                 return {
                     'raw': val_node.text,
@@ -148,5 +208,5 @@ class EtaApi:
                     'dec_places': int(val_node.attrib.get('decPlaces', 0))
                 }
             return None
-        except ET.ParseError:
+        except Exception:
             return None
