@@ -1,32 +1,21 @@
-"""Sensor platform for ETA Pellematic with DeviceClasses."""
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
 UNIT_MAP = {
     "°C": (SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
     "kW": (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
-    "W": (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
     "kg": (SensorDeviceClass.WEIGHT, SensorStateClass.TOTAL_INCREASING),
     "bar": (SensorDeviceClass.PRESSURE, SensorStateClass.MEASUREMENT),
     "Pa": (SensorDeviceClass.PRESSURE, SensorStateClass.MEASUREMENT),
-    "s": (SensorDeviceClass.DURATION, SensorStateClass.TOTAL_INCREASING),
-    "h": (SensorDeviceClass.DURATION, SensorStateClass.TOTAL_INCREASING),
-    "%": (None, SensorStateClass.MEASUREMENT),
 }
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [EtaSensor(coordinator, uri, ep.name) 
-                for uri, ep in coordinator.discovered_endpoints.items()]
+    entities = [EtaSensor(coordinator, uri, ep.name) for uri, ep in coordinator.discovered_endpoints.items()]
     async_add_entities(entities)
 
 class EtaSensor(CoordinatorEntity, SensorEntity):
-    """Representation of an ETA Sensor."""
     def __init__(self, coordinator, uri, name):
         super().__init__(coordinator)
         self._uri, self._attr_name = uri, name
@@ -37,23 +26,28 @@ class EtaSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         data = self.coordinator.data.get(self._uri)
         if not data: return None
-        if not data.get('unit'): return data.get('str_value')
-        try:
-            return float(data['raw']) / data['scale']
-        except (ValueError, TypeError):
-            return data.get('str_value')
+        str_val, unit = data.get('str_value', ''), data.get('unit')
+        
+        if str_val in ["xxx", "---", "", None]:
+            return None if unit else "Inaktiv"
+        
+        if unit:
+            try: return float(data['raw']) / data.get('scale', 1)
+            except: return str_val
+        return str_val
 
     @property
     def native_unit_of_measurement(self):
-        data = self.coordinator.data.get(self._uri)
-        return data.get('unit') if data else None
+        if isinstance(self.native_value, (int, float)):
+            return self.coordinator.data.get(self._uri, {}).get('unit')
+        return None
 
     @property
     def device_class(self):
-        unit = self.native_unit_of_measurement
+        unit = self.coordinator.data.get(self._uri, {}).get('unit')
         return UNIT_MAP.get(unit, (None, None))[0]
 
     @property
     def state_class(self):
-        unit = self.native_unit_of_measurement
+        unit = self.coordinator.data.get(self._uri, {}).get('unit')
         return UNIT_MAP.get(unit, (None, None))[1]
