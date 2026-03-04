@@ -1,18 +1,13 @@
-"""Switch platform for ETA Pellematic."""
-from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [EtaSwitch(coordinator, uri, ep.name) 
-                for uri, ep in coordinator.discovered_endpoints.items() 
-                if uri.endswith("12080")]
+    entities = [EtaSwitch(coordinator, uri, ep.name) for uri, ep in coordinator.discovered_endpoints.items() if uri.endswith("12080")]
     async_add_entities(entities)
 
 class EtaSwitch(CoordinatorEntity, SwitchEntity):
-    """Generic ETA On/Off Switch."""
     def __init__(self, coordinator, uri, name):
         super().__init__(coordinator)
         self._uri, self._attr_name = uri, name
