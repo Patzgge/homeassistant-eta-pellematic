@@ -1,0 +1,21 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Connect to ETA Heating",
+                "description": "Enter the IP address of your ETA system. The REST API must be enabled on the device.",
+                "data": {
+                    "host": "IP Address",
+                    "port": "Port (Default: 8080)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Connection failed. Please check IP and network.",
+            "unknown": "Unexpected error"
+        },
+        "abort": {
+            "already_configured": "Device is already configured."
+        }
+    }
+}
