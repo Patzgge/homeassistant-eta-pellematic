@@ -1,4 +1,4 @@
-"""Sensor platform for ETA Pellematic - Stability Patch v0.0.6."""
+"""Sensor platform for ETA Pellematic."""
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
