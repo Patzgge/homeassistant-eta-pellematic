@@ -8,7 +8,8 @@ from .api import EtaApi
 from .const import CONF_HOST, CONF_PORT, DOMAIN
 from .coordinator import EtaDataUpdateCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+# In Version 0.0.5 wurde Platform.SWITCH hinzugefügt, um die Schalter zu aktivieren
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -18,15 +19,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = EtaDataUpdateCoordinator(hass, api)
 
-    # Perform discovery before setting up platforms
+    # Führt die Entdeckung (Discovery) der Sensoren und Schalter durch
     await coordinator.async_setup()
 
-    # Initial fetch
+    # Erster Datenabruf
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
+    # Leitet das Setup an die Sensor- und Switch-Plattformen weiter
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
