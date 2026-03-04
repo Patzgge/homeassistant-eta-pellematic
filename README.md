@@ -55,9 +55,12 @@ A: ETA systems expose almost every internal variable. You can disable the ones y
 **Q: The sensor names are in German?**
 A: The integration reads the names directly from the boiler's firmware. If your installer set up the boiler in German, the API returns German names.
 
-## 🤖 Credits & Vibecoding
+## 👏 Credits & Acknowledgments
 
-This project was built with the support of **AI Vibecoding**.
+This project stands on the shoulders of giants.
+
+* **Original Project:** Big thanks to [nigl](https://github.com/nigl/homeassistant_eta_integration) for the original ETA integration work, which served as the foundation and inspiration for handling the ETA API.
+* **Vibecoding:** This project was refactored, modernized, and enhanced with the support of **AI Vibecoding**.
 
 ## Disclaimer
 
