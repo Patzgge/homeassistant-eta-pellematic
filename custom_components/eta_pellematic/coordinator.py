@@ -10,6 +10,7 @@ class EtaDataUpdateCoordinator(DataUpdateCoordinator):
         self.api = api
         self.config_entry = entry
         
+        # Liest das Intervall aus den Optionen (falls geändert) oder der Config
         scan_interval = entry.options.get(
             CONF_SCAN_INTERVAL, 
             entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
