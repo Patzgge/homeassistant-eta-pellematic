@@ -1,7 +1,9 @@
+"""Sensor platform for ETA Pellematic - Stability Patch v0.0.6."""
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
+# Mapping für Icons und Statistiken
 UNIT_MAP = {
     "°C": (SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
     "kW": (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
@@ -16,6 +18,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities)
 
 class EtaSensor(CoordinatorEntity, SensorEntity):
+    """Representation of an ETA Sensor."""
     def __init__(self, coordinator, uri, name):
         super().__init__(coordinator)
         self._uri, self._attr_name = uri, name
@@ -26,28 +29,40 @@ class EtaSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         data = self.coordinator.data.get(self._uri)
         if not data: return None
-        str_val, unit = data.get('str_value', ''), data.get('unit')
         
-        if str_val in ["xxx", "---", "", None]:
+        raw = data.get('raw')
+        str_val = data.get('str_value', '')
+        unit = data.get('unit')
+
+        # 1. Platzhalter abfangen (xxx oder --- oder leer)
+        if str_val in ["xxx", "---", "", None] or raw in ["xxx", "---", "", None]:
             return None if unit else "Inaktiv"
-        
+
+        # 2. Wenn eine Einheit da ist, muss es eine Zahl sein
         if unit:
-            try: return float(data['raw']) / data.get('scale', 1)
-            except: return str_val
+            try:
+                # Wir berechnen den Wert und geben ihn als Float zurück
+                return float(raw) / data.get('scale', 1)
+            except (ValueError, TypeError):
+                # Wenn es trotz Einheit keine Zahl ist (z.B. Zeitspanne)
+                return str_val
+
         return str_val
 
     @property
     def native_unit_of_measurement(self):
+        data = self.coordinator.data.get(self._uri)
+        # Einheit nur mitsenden, wenn der Wert auch eine Zahl ist
         if isinstance(self.native_value, (int, float)):
-            return self.coordinator.data.get(self._uri, {}).get('unit')
+            return data.get('unit')
         return None
 
     @property
     def device_class(self):
         unit = self.coordinator.data.get(self._uri, {}).get('unit')
-        return UNIT_MAP.get(unit, (None, None))[0]
+        return UNIT_MAP.get(unit, (None, None))[0] if unit else None
 
     @property
     def state_class(self):
         unit = self.coordinator.data.get(self._uri, {}).get('unit')
-        return UNIT_MAP.get(unit, (None, None))[1]
+        return UNIT_MAP.get(unit, (None, None))[1] if unit else None
