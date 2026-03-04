@@ -17,7 +17,8 @@ class EtaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             return self.async_create_entry(title=f"ETA ({user_input[CONF_HOST]})", data=user_input)
 
-        return self.show_form(
+        # KORREKTUR: Hier stand vorher self.show_form -> muss async_show_form sein
+        return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_HOST): str,
@@ -48,7 +49,8 @@ class EtaOptionsFlowHandler(config_entries.OptionsFlow):
         data = self.config_entry.data
         current_interval = options.get(CONF_SCAN_INTERVAL, data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
 
-        return self.show_form(
+        # KORREKTUR: Hier stand vorher self.show_form -> muss async_show_form sein
+        return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(
