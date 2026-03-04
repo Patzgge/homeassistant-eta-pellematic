@@ -2,26 +2,27 @@
   "config": {
     "step": {
       "user": {
-        "title": "Verbinde mit ETA Heizung",
+        "title": "Connect to ETA Heating",
+        "description": "Please enter the IP address and port of your ETA heating system.",
         "data": {
-          "host": "IP-Adresse",
-          "port": "Port (Standard: 8080)"
+          "host": "IP Address",
+          "port": "Port (Default: 8080)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung fehlgeschlagen. Prüfe IP und Port."
+      "cannot_connect": "Connection failed. Please check IP and Port."
     },
     "abort": {
-      "already_configured": "Gerät ist bereits konfiguriert"
+      "already_configured": "Device is already configured"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Einstellungen",
+        "title": "Configuration",
         "data": {
-          "scan_interval": "Abfrageintervall (Sekunden)"
+          "scan_interval": "Update Interval (seconds)"
         }
       }
     }
