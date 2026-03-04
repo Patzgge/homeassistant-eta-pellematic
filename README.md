@@ -55,8 +55,9 @@ A: ETA systems expose almost every internal variable. You can disable the ones y
 **Q: The sensor names are in German?**
 A: The integration reads the names directly from the boiler's firmware. If your installer set up the boiler in German, the API returns German names.
 
-**Q: Can I change values (e.g., turn heating on/off)?**
-A: Currently, this integration is Read-Only to ensure safety. Write support is planned for future releases.
+## 🤖 Credits & Vibecoding
+
+This project was built with the support of **AI Vibecoding**.
 
 ## Disclaimer
 
