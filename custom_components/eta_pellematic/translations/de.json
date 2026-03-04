@@ -1,0 +1,21 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Verbindung zur ETA Heizung",
+                "description": "Gib die IP-Adresse deiner ETA Anlage ein. Die REST-API muss in der Heizung aktiviert sein.",
+                "data": {
+                    "host": "IP-Adresse",
+                    "port": "Port (Standard: 8080)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Verbindung fehlgeschlagen. Bitte prüfe IP und Netzwerk.",
+            "unknown": "Unerwarteter Fehler"
+        },
+        "abort": {
+            "already_configured": "Dieses Gerät ist bereits konfiguriert."
+        }
+    }
+}
