@@ -4,26 +4,45 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.data_entry_flow import FlowResult
 
+from .api import EtaApi
 from .const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 class EtaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow."""
+    """Handle a config flow for ETA Pellematic."""
     VERSION = 1
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
-        """Initial setup via UI."""
-        if user_input is not None:
-            return self.async_create_entry(title=f"ETA ({user_input[CONF_HOST]})", data=user_input)
+        """Handle the initial step."""
+        errors: dict[str, str] = {}
 
-        # KORREKTUR: Hier stand vorher self.show_form -> muss async_show_form sein
+        if user_input is not None:
+            # Validierung: Wir prüfen, ob wir die Heizung erreichen können
+            session = async_get_clientsession(self.hass)
+            api = EtaApi(session, user_input[CONF_HOST], user_input.get(CONF_PORT, DEFAULT_PORT))
+            
+            if await api.check_connection():
+                # Erfolg! Eintrag erstellen.
+                # Wir setzen die Unique ID auf den Host, um Duplikate zu vermeiden
+                await self.async_set_unique_id(user_input[CONF_HOST])
+                self._abort_if_unique_id_configured()
+                
+                return self.async_create_entry(
+                    title=f"ETA ({user_input[CONF_HOST]})", 
+                    data=user_input
+                )
+            else:
+                errors["base"] = "cannot_connect"
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_HOST): str,
                 vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
             }),
+            errors=errors,
         )
 
     @staticmethod
@@ -44,12 +63,12 @@ class EtaOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        # Aktuellen Wert sicher abrufen
-        options = self.config_entry.options
-        data = self.config_entry.data
-        current_interval = options.get(CONF_SCAN_INTERVAL, data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+        # Aktuellen Wert sicher abrufen (Fallback auf Data, falls Options leer)
+        current_interval = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL, 
+            self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
 
-        # KORREKTUR: Hier stand vorher self.show_form -> muss async_show_form sein
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
