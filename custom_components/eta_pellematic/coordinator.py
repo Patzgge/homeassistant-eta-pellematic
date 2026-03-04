@@ -1,53 +1,31 @@
-"""DataUpdateCoordinator for ETA Pellematic."""
-import logging
 from datetime import timedelta
-from typing import Any, Dict
-
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
-
-from .api import EtaApi
-from .const import DOMAIN, UPDATE_INTERVAL
+import logging
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 LOGGER = logging.getLogger(__name__)
 
-
 class EtaDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching data from the ETA API."""
-
-    def __init__(self, hass: HomeAssistant, api: EtaApi):
-        """Initialize the coordinator."""
+    def __init__(self, hass, api, entry):
         self.api = api
-        self.discovered_endpoints = {}  # Map: uri -> EtaEndpoint
-
+        self.config_entry = entry
+        
+        scan_interval = entry.options.get(
+            CONF_SCAN_INTERVAL, 
+            entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
+        
         super().__init__(
             hass,
             LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL),
+            update_interval=timedelta(seconds=scan_interval),
         )
+        self.discovered_endpoints = {}
 
     async def async_setup(self):
-        """Perform the initial discovery of sensors."""
-        try:
-            self.discovered_endpoints = await self.api.discover_endpoints()
-            if not self.discovered_endpoints:
-                LOGGER.warning("No ETA endpoints discovered.")
-        except Exception as err:
-            LOGGER.error("Discovery failed: %s", err)
+        self.discovered_endpoints = await self.api.discover_endpoints()
 
-    async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data for all discovered endpoints."""
-        if not self.discovered_endpoints:
-            await self.async_setup()
-
-        uris_to_fetch = list(self.discovered_endpoints.keys())
-        
-        try:
-            data = await self.api.get_values(uris_to_fetch)
-            return data
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with API: {err}")
+    async def _async_update_data(self):
+        uris = list(self.discovered_endpoints.keys())
+        return await self.api.get_values(uris)
