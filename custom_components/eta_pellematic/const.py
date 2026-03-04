@@ -1,15 +1,9 @@
-"""Constants for the ETA Pellematic Integration."""
-from logging import Logger, getLogger
-
-LOGGER: Logger = getLogger(__package__)
-
+"""Constants for the ETA Pellematic integration."""
 DOMAIN = "eta_pellematic"
-NAME = "ETA Heating"
 
 CONF_HOST = "host"
 CONF_PORT = "port"
+CONF_SCAN_INTERVAL = "scan_interval"
 
 DEFAULT_PORT = 8080
-
-# Interval in seconds to poll the values
-UPDATE_INTERVAL = 60
+DEFAULT_SCAN_INTERVAL = 60
