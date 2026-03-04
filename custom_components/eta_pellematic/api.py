@@ -1,102 +1,91 @@
-"""API Client for ETA Heating Systems with Auto-Discovery."""
+"""API Client for ETA Heating Systems with Text Value Support."""
 import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-
 import aiohttp
 
 LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class EtaEndpoint:
-    """Represents a discovered endpoint (sensor/parameter)."""
+    """Represents a discovered leaf endpoint."""
     uri: str
     name: str
 
 class EtaApi:
-    """Handling the API communication and tree traversal."""
+    """Handling the API communication."""
 
     def __init__(self, session: aiohttp.ClientSession, host: str, port: int = 8080):
-        """Initialize the API."""
         self._session = session
         self._base_url = f"http://{host}:{port}"
 
     async def check_connection(self) -> bool:
-        """Verify connection to the API."""
+        """Verify connection."""
         try:
             async with self._session.get(f"{self._base_url}/user/menu", timeout=5) as response:
                 return response.status == 200
         except Exception:
             return False
 
+    def _strip_ns(self, root):
+        """Helper to remove XML namespaces."""
+        for el in root.iter():
+            if '}' in el.tag: el.tag = el.tag.split('}', 1)[1]
+        return root
+
     async def discover_endpoints(self) -> Dict[str, EtaEndpoint]:
-        """Crawl the ETA XML tree using verified logic."""
+        """Crawl the ETA XML tree and filter for real sensors."""
         endpoints = {}
 
         async def fetch_and_crawl(uri: str, path_names: List[str]):
             url = f"{self._base_url}/user/menu{uri}"
             try:
-                async with self._session.get(url, timeout=10) as response:
-                    if response.status != 200:
-                        return
-                    text = await response.text()
-                    root = ET.fromstring(text)
+                async with self._session.get(url, timeout=15) as response:
+                    if response.status != 200: return
+                    root = self._strip_ns(ET.fromstring(await response.text()))
                     
-                    # Namespace-Bereinigung wie im erfolgreichen Test
-                    for el in root.iter():
-                        if '}' in el.tag:
-                            el.tag = el.tag.split('}', 1)[1]
-
-                    # Startpunkt suchen
                     menu_node = root.find(".//menu") if root.tag == "eta" else root
                     if menu_node is None: menu_node = root
-
+                    
                     await self._crawl_recursive(menu_node, path_names, endpoints)
             except Exception as e:
                 LOGGER.debug("Discovery error at %s: %s", uri, e)
 
         await fetch_and_crawl("", [])
-        LOGGER.info("Discovery finished. Found %s endpoints.", len(endpoints))
         return endpoints
 
     async def _crawl_recursive(self, node: ET.Element, path_names: List[str], endpoints: Dict[str, EtaEndpoint]):
-        """Recursive crawler logic verified by Mac test."""
         for child in node:
             if child.tag in ['fub', 'object']:
                 name = child.get('name')
                 uri = child.get('uri')
+                if not name or not uri: continue
+
+                new_path = path_names + [name]
                 
-                if name and uri:
-                    new_path = path_names + [name]
-                    # Namen generieren (Duplikate entfernen)
+                # SMART FILTER: Nur Endknoten (Blätter) als Sensor speichern
+                if len(child) == 0:
                     clean_name = " ".join(dict.fromkeys(new_path))
                     endpoints[uri] = EtaEndpoint(uri=uri, name=clean_name)
-                    
-                    # Tiefer graben
-                    if len(child) > 0:
-                        await self._crawl_recursive(child, new_path, endpoints)
-                    elif child.tag == 'fub':
-                        # Falls ein FUB leer ist, rufen wir ihn über das Netzwerk ab
-                        await self._fetch_sub_menu(uri, new_path, endpoints)
+                
+                if len(child) > 0:
+                    await self._crawl_recursive(child, new_path, endpoints)
+                elif child.tag == 'fub':
+                    await self._fetch_sub_menu(uri, new_path, endpoints)
 
     async def _fetch_sub_menu(self, uri: str, path_names: List[str], endpoints: Dict[str, EtaEndpoint]):
-        """Fetch a sub-menu for empty FUB nodes."""
         url = f"{self._base_url}/user/menu{uri}"
         try:
             async with self._session.get(url, timeout=10) as response:
                 if response.status == 200:
-                    text = await response.text()
-                    root = ET.fromstring(text)
-                    for el in root.iter():
-                        if '}' in el.tag: el.tag = el.tag.split('}', 1)[1]
+                    root = self._strip_ns(ET.fromstring(await response.text()))
                     await self._crawl_recursive(root, path_names, endpoints)
-        except Exception:
-            pass
+        except Exception: pass
 
     async def get_values(self, uris: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Fetch values for discovered URIs."""
+        """Fetch values including strValue for text states."""
         results = {}
         sem = asyncio.Semaphore(10)
 
@@ -106,11 +95,7 @@ class EtaApi:
                 try:
                     async with self._session.get(url, timeout=5) as response:
                         if response.status == 200:
-                            text = await response.text()
-                            root = ET.fromstring(text)
-                            for el in root.iter():
-                                if '}' in el.tag: el.tag = el.tag.split('}', 1)[1]
-                            
+                            root = self._strip_ns(ET.fromstring(await response.text()))
                             val_node = root if root.tag == "value" else root.find(".//value")
                             if val_node is not None:
                                 results[uri] = {
@@ -119,8 +104,14 @@ class EtaApi:
                                     'unit': val_node.attrib.get('unit', ''),
                                     'scale': float(val_node.attrib.get('scaleFactor', 1)),
                                 }
-                except Exception:
-                    pass
-
+                except Exception: pass
         await asyncio.gather(*(fetch_val(u) for u in uris))
         return results
+
+    async def write_value(self, uri: str, value: Any) -> bool:
+        """Write value (POST) to ETA."""
+        url = f"{self._base_url}/user/var{uri}"
+        try:
+            async with self._session.post(url, data={'value': str(value)}) as resp:
+                return resp.status == 200
+        except Exception: return False
