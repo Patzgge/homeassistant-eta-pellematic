@@ -22,6 +22,15 @@ class EtaApi:
             if '}' in el.tag: el.tag = el.tag.split('}', 1)[1]
         return root
 
+    async def check_connection(self) -> bool:
+        """Check if the ETA boiler is reachable."""
+        try:
+            url = f"{self._base_url}/user/menu"
+            async with self._session.get(url, timeout=5) as response:
+                return response.status == 200
+        except Exception:
+            return False
+
     async def discover_endpoints(self) -> Dict[str, EtaEndpoint]:
         endpoints = {}
         async def fetch_and_crawl(uri: str, path_names: List[str]):
